@@ -5,6 +5,8 @@ import pandas as pd
 import datetime
 import requests
 import io
+import time
+import pytz  # 用於處理時區
 
 # --- 1. 頁面設定 ---
 st.set_page_config(page_title="牧羊人風險戰情室", layout="wide", page_icon="📊")
@@ -18,40 +20,55 @@ st.markdown("""
     header {visibility: hidden;} 
     footer {visibility: hidden;}
     .block-container { padding-top: 1rem; }
-    /* 卡片樣式 */
     div.css-1r6slb0 { background-color: #1e222d; border: 1px solid #333; padding: 15px; border-radius: 10px; }
     </style>
 """, unsafe_allow_html=True)
 
-# --- 標題 ---
-st.title("📊 牧羊人量化戰情室 (情緒標註版)")
-st.caption(f"Last Update: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+# --- 3. 時間處理 (台灣時間) ---
+tw = pytz.timezone('Asia/Taipei')
+now_time = datetime.datetime.now(tw).strftime('%Y-%m-%d %H:%M:%S')
 
-# --- 3. 籌碼爬蟲 (TAIFEX) ---
+# --- 標題區 ---
+col_h1, col_h2 = st.columns([3, 1])
+with col_h1:
+    st.title("📊 牧羊人量化戰情室")
+with col_h2:
+    st.caption("🕒 最後更新 (Taiwan Time):")
+    st.subheader(f"{now_time}")
+
+# --- 4. 籌碼爬蟲 (TAIFEX) ---
 @st.cache_data(ttl=3600)
 def get_taifex_chips():
     try:
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36'}
         url_pc = "https://www.taifex.com.tw/cht/3/pcRatioDown"
-        # 簡易邏輯：抓今天，若無則抓近30天最後一筆
-        res_pc = requests.post(url_pc, data={'queryStartDate': datetime.datetime.now().strftime('%Y/%m/%d'), 
-                                             'queryEndDate': datetime.datetime.now().strftime('%Y/%m/%d')})
-        if res_pc.content == b'': 
-             start = (datetime.datetime.now() - datetime.timedelta(days=30)).strftime('%Y/%m/%d')
-             end = datetime.datetime.now().strftime('%Y/%m/%d')
-             res_pc = requests.post(url_pc, data={'queryStartDate': start, 'queryEndDate': end})
-
-        df_pc = pd.read_csv(io.StringIO(res_pc.text), index_col=False)
-        last_pc_ratio = float(df_pc.iloc[-1]['買賣權未平倉量比率%'])
-        pc_date = df_pc.iloc[-1]['日期']
         
-        return {
-            "date": pc_date,
-            "pc_ratio": last_pc_ratio,
-            "status": "偏多 (支撐強)" if last_pc_ratio > 100 else "偏空 (壓力大)"
+        # 抓取範圍
+        end_date = datetime.datetime.now(tw)
+        start_date = end_date - datetime.timedelta(days=15) # 抓過去15天以防長假
+        
+        payload = {
+            'queryStartDate': start_date.strftime('%Y/%m/%d'),
+            'queryEndDate': end_date.strftime('%Y/%m/%d')
         }
+        
+        res_pc = requests.post(url_pc, data=payload, headers=headers)
+        
+        try:
+            df_pc = pd.read_csv(io.StringIO(res_pc.text), index_col=False)
+        except:
+            df_pc = pd.read_csv(io.BytesIO(res_pc.content), encoding='big5', index_col=False)
+
+        if df_pc.empty: return None
+
+        last_row = df_pc.iloc[-1]
+        last_pc_ratio = float(last_row['買賣權未平倉量比率%'])
+        pc_date = last_row['日期']
+        
+        return {"date": pc_date, "pc_ratio": last_pc_ratio, "status": "偏多 (支撐強)" if last_pc_ratio > 100 else "偏空 (壓力大)"}
     except: return None
 
-# --- 4. 市場數據 (Yahoo) ---
+# --- 5. 市場數據 (Yahoo) ---
 @st.cache_data(ttl=60)
 def get_market_data(ticker):
     try:
@@ -73,23 +90,18 @@ def get_market_data(ticker):
         return {"price": current_price, "change": change, "rsi": current_rsi, "history": data['Close']}
     except: return None
 
-# --- 5. 繪圖函數 (新增：左右標籤) ---
+# --- 6. 繪圖函數 ---
 def plot_gauge(value, title, left_label, right_label, is_risk_asset=False, is_pc_ratio=False):
-    
-    # 1. 顏色邏輯
     if is_pc_ratio:
         bar_color = "#26a69a" if value > 100 else "#ef5350"
         min_v, max_v = 50, 150
     elif is_risk_asset:
-        # 風險資產(股票)：右邊(>70)是貪婪/過熱(紅)，左邊(<30)是恐慌/超賣(綠)
         bar_color = "#ef5350" if value > 70 else "#26a69a" if value < 30 else "#b0bec5"
         min_v, max_v = 0, 100
     else:
-        # 壓力源(VIX)：右邊(>60)是恐慌(紅)，左邊(<40)是安全(綠)
         bar_color = "#26a69a" if value < 40 else "#ef5350" if value > 60 else "#b0bec5"
         min_v, max_v = 0, 100
 
-    # 2. 建立儀錶板
     fig = go.Figure(go.Indicator(
         mode = "gauge+number",
         value = value,
@@ -104,23 +116,17 @@ def plot_gauge(value, title, left_label, right_label, is_risk_asset=False, is_pc
             'threshold': {'line': {'color': "white", 'width': 2}, 'thickness': 0.75, 'value': value}
         }
     ))
-
-    # 3. 新增左右文字標籤 (Annotations)
     fig.update_layout(
-        height=180, 
-        margin={'t': 30, 'b': 20, 'l': 20, 'r': 20},
-        paper_bgcolor='rgba(0,0,0,0)', 
-        font={'color': "white"},
+        height=180, margin={'t': 30, 'b': 20, 'l': 20, 'r': 20},
+        paper_bgcolor='rgba(0,0,0,0)', font={'color': "white"},
         annotations=[
-            # 左邊標籤
             dict(x=0.2, y=0.1, text=left_label, showarrow=False, font=dict(size=12, color="#888")),
-            # 右邊標籤
             dict(x=0.8, y=0.1, text=right_label, showarrow=False, font=dict(size=12, color="#888"))
         ]
     )
     return fig
 
-# --- 6. 版面佈局 ---
+# --- 7. 版面佈局 ---
 
 # 籌碼面
 st.subheader("♟️ 選擇權籌碼 (P/C Ratio)")
@@ -128,16 +134,15 @@ chips = get_taifex_chips()
 if chips:
     col_chip1, col_chip2 = st.columns([1, 3])
     with col_chip1:
-        st.metric(label=f"P/C Ratio ({chips['date']})", value=f"{chips['pc_ratio']}%", delta=chips['status'])
+        st.metric(label=f"日期: {chips['date']}", value=f"{chips['pc_ratio']}%", delta=chips['status'])
     with col_chip2:
-        # P/C: 左邊=偏空，右邊=偏多
         st.plotly_chart(plot_gauge(chips['pc_ratio'], "P/C Ratio 動能", "偏空/壓力", "偏多/支撐", is_pc_ratio=True), use_container_width=True, config={'displayModeBar': False})
 else:
-    st.info("Loading Chips...")
+    st.error("⚠️ 無法讀取期交所數據")
 
 st.markdown("---")
 
-# 壓力源 (VIX類型：右邊是恐慌)
+# 壓力源
 st.subheader("🔥 市場壓力源")
 col1, col2, col3, col4 = st.columns(4)
 stress_tickers = [("^VIX", "VIX 恐慌"), ("DX-Y.NYB", "美元指數"), ("^TNX", "美債10年"), ("JPY=X", "日圓")]
@@ -148,12 +153,11 @@ for col, (symbol, name) in zip([col1, col2, col3, col4], stress_tickers):
             data = get_market_data(symbol)
             if data:
                 st.metric(label=name, value=f"{data['price']:.2f}", delta=f"{data['change']:.2f}%")
-                # 壓力源：左邊=安全，右邊=恐慌
                 st.plotly_chart(plot_gauge(data['rsi'], "RSI 強度", "安全", "恐慌/壓力", is_risk_asset=False), use_container_width=True, config={'displayModeBar': False})
             else:
                 st.warning("Loading...")
 
-# 風險資產 (股票類型：左邊是恐慌/超賣，右邊是貪婪/過熱)
+# 風險資產
 st.subheader("📉 風險資產")
 col5, col6 = st.columns(2)
 asset_tickers = [("EWT", "台股 ETF"), ("BTC-USD", "比特幣")]
@@ -164,12 +168,28 @@ for col, (symbol, name) in zip([col5, col6], asset_tickers):
             data = get_market_data(symbol)
             if data:
                 st.metric(label=name, value=f"{data['price']:.2f}", delta=f"{data['change']:.2f}%")
-                # 資產：左邊=恐慌(超賣)，右邊=貪婪(過熱)
                 st.plotly_chart(plot_gauge(data['rsi'], "RSI 動能", "恐慌 (超賣)", "貪婪 (過熱)", is_risk_asset=True), use_container_width=True, config={'displayModeBar': False})
             else:
                 st.warning("Loading...")
 
-# 自動刷新
-if st.sidebar.button("🔄 重新整理"):
+# --- 8. 自動刷新控制台 ---
+st.sidebar.title("⚙️ 系統控制")
+auto_refresh = st.sidebar.checkbox("啟用自動刷新 (每60秒)", value=True)
+
+if st.sidebar.button("🔄 立即重新整理"):
     st.cache_data.clear()
     st.rerun()
+
+if auto_refresh:
+    # 倒數計時條
+    timer_placeholder = st.sidebar.empty()
+    refresh_rate = 60 # 建議 60 秒，避免被 Yahoo 封鎖
+    
+    for i in range(refresh_rate, 0, -1):
+        timer_placeholder.progress(i / refresh_rate, text=f"⏳ 下次更新: {i} 秒")
+        time.sleep(1)
+        
+    st.cache_data.clear() # 清除快取以確保抓到新資料
+    st.rerun()
+else:
+    st.sidebar.info("⏸️ 自動刷新已暫停")
