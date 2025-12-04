@@ -2,156 +2,165 @@ import streamlit as st
 import yfinance as yf
 import plotly.graph_objects as go
 import pandas as pd
+import datetime
+import time
+import pytz # 用來處理時區
 
-# --- 頁面設定 ---
-st.set_page_config(page_title="牧羊人風險戰情室", layout="wide", page_icon="📊")
+# --- 1. 頁面設定 ---
+st.set_page_config(
+    page_title="牧羊人風險戰情室", 
+    layout="wide", 
+    page_icon="📊",
+    initial_sidebar_state="expanded"
+)
 
-# --- CSS 優化 (隱藏預設選單，讓畫面更像 App) ---
+# --- 2. CSS 樣式 (維持深色模式) ---
 st.markdown("""
     <style>
-    .reportview-container { margin-top: -2em; }
-    #MainMenu {visibility: hidden;}
-    .stDeployButton {display:none;}
+    .stApp {
+        background-color: #0e1117;
+        color: #fafafa;
+    }
+    [data-testid="stMetricValue"] {
+        color: #ffffff !important;
+    }
+    [data-testid="stMetricLabel"] {
+        color: #aaaaaa !important;
+    }
+    header {visibility: hidden;}
     footer {visibility: hidden;}
+    .block-container { padding-top: 1rem; }
+    
+    /* 卡片背景 */
+    div.css-1r6slb0 {
+        background-color: #1e222d;
+        border: 1px solid #333;
+        padding: 15px;
+        border-radius: 10px;
+    }
     </style>
 """, unsafe_allow_html=True)
 
-# --- 標題 ---
-st.title("📊 牧羊人量化風險戰情室 (Python版)")
-st.caption("Deployment: Streamlit Cloud | Data: Yahoo Finance (Real-time)")
+# --- 3. 時間處理 (轉換為台灣時間) ---
+tw_tz = pytz.timezone('Asia/Taipei')
+now_time = datetime.datetime.now(tw_tz).strftime('%Y-%m-%d %H:%M:%S')
 
-# --- 核心函數：取得數據並計算分數 ---
-# 這裡我們可以寫自己的邏輯！不必再依賴 TradingView 的指針
+# --- 標題區 ---
+col_h1, col_h2 = st.columns([3, 1])
+with col_h1:
+    st.title("📊 牧羊人量化戰情室 (Auto)")
+with col_h2:
+    st.caption(f"🕒 最後更新 (TW):")
+    st.markdown(f"**{now_time}**")
+
+# --- 4. 數據核心 (設定 ttl=60秒 保護機制) ---
+# 注意：這裡設定 60 秒快取。即使頁面 5 秒刷一次，數據每 60 秒才會真正更新一次。
+@st.cache_data(ttl=60)
 def get_market_data(ticker):
     try:
-        data = yf.download(ticker, period="1y", interval="1d", progress=False)
-        if len(data) < 2:
-            return None
+        data = yf.download(ticker, period="6mo", interval="1d", progress=False)
+        if isinstance(data.columns, pd.MultiIndex):
+            data.columns = data.columns.get_level_values(0)
         
-        # 取得最新價格與漲跌
-        current_price = data['Close'].iloc[-1].item()
-        prev_close = data['Close'].iloc[-2].item()
+        if len(data) < 15: return None
+        
+        current_price = float(data['Close'].iloc[-1])
+        prev_close = float(data['Close'].iloc[-2])
         change = (current_price - prev_close) / prev_close * 100
         
-        # 計算 RSI (14) 作為量化指標
+        # RSI 計算
         delta = data['Close'].diff()
         gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
         rs = gain / loss
-        rsi = 100 - (100 / (1 + rs)).iloc[-1].item()
+        rsi = 100 - (100 / (1 + rs))
+        current_rsi = float(rsi.iloc[-1])
         
         return {
             "price": current_price,
             "change": change,
-            "rsi": rsi,
+            "rsi": current_rsi,
             "history": data['Close']
         }
-    except Exception as e:
+    except:
         return None
 
-# --- 繪製儀錶板 (Gauge) 的函數 ---
-def plot_gauge(value, title, min_val=0, max_val=100, is_risk_asset=False):
-    # 如果是風險資產(如台股)，RSI低(30)是超賣(買點)，RSI高(70)是超買(賣點)
-    # 如果是避險資產(如VIX)，數值越高越危險
-    
+# --- 5. 儀錶板繪圖 ---
+def plot_gauge(value, title, is_risk_asset=False):
     if is_risk_asset:
-        # 資產類：低分(左)危險，高分(右)強勢
-        colors = [
-            (0.3, "red"), (0.7, "gray"), (1.0, "green")
-        ]
-        current_color = "red" if value < 30 else "green" if value > 70 else "white"
+        bar_color = "#ff5252" if value > 70 else "#00e676" if value < 30 else "#b0bec5"
     else:
-        # 壓力類(VIX)：低分(左)安全，高分(右)危險
-        colors = [
-            (0.3, "green"), (0.7, "gray"), (1.0, "red")
-        ]
-        current_color = "green" if value < 20 else "red" if value > 30 else "white"
+        bar_color = "#00e676" if value < 40 else "#ff5252" if value > 60 else "#b0bec5"
 
     fig = go.Figure(go.Indicator(
         mode = "gauge+number",
         value = value,
-        title = {'text': title, 'font': {'size': 20}},
-        number = {'font': {'color': current_color}},
+        number = {'suffix': "", 'font': {'size': 24, 'color': "white"}},
+        title = {'text': title, 'font': {'size': 14, 'color': "#aaaaaa"}},
         gauge = {
-            'axis': {'range': [min_val, max_val], 'tickwidth': 1},
-            'bar': {'color': current_color}, # 指針顏色
+            'axis': {'range': [0, 100], 'tickwidth': 1, 'tickcolor': "#555"},
+            'bar': {'color': bar_color},
             'bgcolor': "rgba(0,0,0,0)",
-            'borderwidth': 2,
-            'bordercolor': "#333",
-            'steps': [
-                {'range': [min_val, min_val+(max_val-min_val)*0.3], 'color': "#1e222d"},
-                {'range': [min_val+(max_val-min_val)*0.3, min_val+(max_val-min_val)*0.7], 'color': "#131722"},
-                {'range': [min_val+(max_val-min_val)*0.7, max_val], 'color': "#1e222d"}
-            ],
+            'borderwidth': 0,
+            'steps': [{'range': [0, 100], 'color': '#131722'}],
+            'threshold': {'line': {'color': "white", 'width': 2}, 'thickness': 0.75, 'value': value}
         }
     ))
     fig.update_layout(
-        height=250, 
-        margin={'t':30,'b':10,'l':20,'r':20},
-        paper_bgcolor='rgba(0,0,0,0)',
+        height=160, 
+        margin={'t': 30, 'b': 10, 'l': 30, 'r': 30},
+        paper_bgcolor='rgba(0,0,0,0)', 
+        plot_bgcolor='rgba(0,0,0,0)',
         font={'color': "white"}
     )
     return fig
 
-# --- 主畫面佈局 ---
-# 定義我們要監控的商品 (代碼使用 Yahoo Finance)
-tickers = {
-    "VIX 恐慌指數": {"symbol": "^VIX", "type": "stress"},
-    "美元指數": {"symbol": "DX-Y.NYB", "type": "stress"},
-    "10年美債殖利": {"symbol": "^TNX", "type": "stress"},
-    "台股 (EWT)": {"symbol": "EWT", "type": "asset"},
-    "日圓 (JPY=X)": {"symbol": "JPY=X", "type": "stress"}, # 日圓匯率
-    "比特幣": {"symbol": "BTC-USD", "type": "asset"},
-}
+# --- 6. 內容佈局 ---
 
-# 建立 3欄 x 2列 的網格
-cols = st.columns(3) # 第一排
-cols2 = st.columns(3) # 第二排
-all_cols = cols + cols2
+# 壓力源
+st.subheader("🔥 市場壓力源")
+col1, col2, col3, col4 = st.columns(4)
+stress_tickers = [("^VIX", "VIX 恐慌"), ("DX-Y.NYB", "美元指數"), ("^TNX", "美債10年"), ("JPY=X", "日圓")]
 
-# 迴圈處理每個商品
-for i, (name, info) in enumerate(tickers.items()):
-    with all_cols[i]:
-        # 顯示載入中...
-        with st.spinner(f"Loading {name}..."):
-            data = get_market_data(info["symbol"])
-        
-        if data:
-            # 1. 顯示大數字 (Metric)
-            st.metric(
-                label=name,
-                value=f"{data['price']:.2f}",
-                delta=f"{data['change']:.2f}%",
-                delta_color="inverse" if info["type"] == "stress" else "normal" 
-                # inverse: VIX漲顯示紅色(壞事)，normal: 台股漲顯示綠色(好事)
-            )
-            
-            # 2. 顯示儀錶板 (RSI 作為量化指針)
-            # 這裡我們用 RSI (0-100) 來當作「溫度計」
-            # 當然，你也可以自己寫更複雜的 Python 邏輯來計算這個分數
-            fig = plot_gauge(
-                data['rsi'], 
-                f"RSI 強度: {data['rsi']:.1f}", 
-                is_risk_asset=(info["type"] == "asset")
-            )
-            st.plotly_chart(fig, use_container_width=True)
-            
-            # 3. 簡單的小線圖
-            st.line_chart(data['history'], height=100)
-            
-        else:
-            st.error(f"無法讀取 {name}")
+for col, (symbol, name) in zip([col1, col2, col3, col4], stress_tickers):
+    with col:
+        with st.container():
+            data = get_market_data(symbol)
+            if data:
+                st.metric(label=name, value=f"{data['price']:.2f}", delta=f"{data['change']:.2f}%")
+                st.plotly_chart(plot_gauge(data['rsi'], "RSI 強度"), use_container_width=True, config={'displayModeBar': False})
+            else:
+                st.warning("Loading...")
 
-# --- 側邊欄：進階功能 ---
-st.sidebar.header("⚙️ 控制台")
-st.sidebar.info("這是 Python 版本，可以在後端執行複雜運算。")
-if st.sidebar.button("重新整理數據"):
-    st.rerun()
+st.markdown("---")
 
-# 這裡示範 Python 才能做的事：條件判斷
-st.sidebar.header("🤖 風險快篩")
-vix_data = get_market_data("^VIX")
-if vix_data and vix_data['price'] > 20:
-    st.sidebar.error(f"⚠️ 警告：VIX 目前 {vix_data['price']:.2f}，市場情緒恐慌！")
-else:
-    st.sidebar.success("✅ 目前 VIX 處於安全水位。")
+# 風險資產
+st.subheader("📉 風險資產")
+col5, col6 = st.columns(2)
+asset_tickers = [("EWT", "台股 ETF"), ("BTC-USD", "比特幣")]
+
+for col, (symbol, name) in zip([col5, col6], asset_tickers):
+    with col:
+        with st.container():
+            data = get_market_data(symbol)
+            if data:
+                st.metric(label=name, value=f"{data['price']:.2f}", delta=f"{data['change']:.2f}%")
+                st.plotly_chart(plot_gauge(data['rsi'], "RSI 動能", True), use_container_width=True, config={'displayModeBar': False})
+            else:
+                st.warning("Loading...")
+
+# --- 7. 自動刷新邏輯 (放在最後面) ---
+st.sidebar.title("⚙️ 設定")
+st.sidebar.write("數據來源: Yahoo Finance (快取60秒)")
+
+# 倒數計時器容器
+placeholder = st.sidebar.empty()
+refresh_time = 5 # 設定幾秒刷新一次
+
+# 顯示倒數條
+for i in range(refresh_time, 0, -1):
+    placeholder.progress(i / refresh_time, text=f"下一次更新: {i} 秒後")
+    time.sleep(1) # 等待一秒
+
+# 時間到，執行刷新
+st.rerun()
