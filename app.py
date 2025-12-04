@@ -6,12 +6,12 @@ import datetime
 import requests
 import io
 import time
-import pytz  # 用於處理時區
+import pytz
 
 # --- 1. 頁面設定 ---
 st.set_page_config(page_title="牧羊人風險戰情室", layout="wide", page_icon="📊")
 
-# --- 2. CSS 優化 (深色模式) ---
+# --- 2. CSS 優化 ---
 st.markdown("""
     <style>
     .stApp { background-color: #0e1117; color: #fafafa; }
@@ -24,7 +24,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# --- 3. 時間處理 (台灣時間) ---
+# --- 3. 時間處理 (顯示台灣時間) ---
 tw = pytz.timezone('Asia/Taipei')
 now_time = datetime.datetime.now(tw).strftime('%Y-%m-%d %H:%M:%S')
 
@@ -36,37 +36,45 @@ with col_h2:
     st.caption("🕒 最後更新 (Taiwan Time):")
     st.subheader(f"{now_time}")
 
-# --- 4. 籌碼爬蟲 (TAIFEX) ---
+# --- 4. [核心修正] 智能籌碼爬蟲 (修正日期 11/19 問題) ---
 @st.cache_data(ttl=3600)
 def get_taifex_chips():
-    try:
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36'}
-        url_pc = "https://www.taifex.com.tw/cht/3/pcRatioDown"
-        
-        # 抓取範圍
-        end_date = datetime.datetime.now(tw)
-        start_date = end_date - datetime.timedelta(days=15) # 抓過去15天以防長假
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36'}
+    url_pc = "https://www.taifex.com.tw/cht/3/pcRatioDown"
+    
+    # 策略：從今天開始，一天一天往回找，最多找 7 天
+    # 這樣可以確保抓到的是「離現在最近」的一筆有效資料 (例如昨天或上週五)
+    for i in range(7):
+        target_date = datetime.datetime.now(tw) - datetime.timedelta(days=i)
+        date_str = target_date.strftime('%Y/%m/%d')
         
         payload = {
-            'queryStartDate': start_date.strftime('%Y/%m/%d'),
-            'queryEndDate': end_date.strftime('%Y/%m/%d')
+            'queryStartDate': date_str,
+            'queryEndDate': date_str # 只查那一天，精準度最高
         }
         
-        res_pc = requests.post(url_pc, data=payload, headers=headers)
-        
         try:
-            df_pc = pd.read_csv(io.StringIO(res_pc.text), index_col=False)
+            res = requests.post(url_pc, data=payload, headers=headers)
+            
+            # 解碼嘗試 (防止 Big5 亂碼)
+            try:
+                df = pd.read_csv(io.StringIO(res.text), index_col=False)
+            except:
+                df = pd.read_csv(io.BytesIO(res.content), encoding='big5', index_col=False)
+            
+            # 如果這一天有資料
+            if not df.empty:
+                row = df.iloc[-1]
+                ratio = float(row['買賣權未平倉量比率%'])
+                return {
+                    "date": row['日期'], # 抓到的正確日期
+                    "pc_ratio": ratio,
+                    "status": "偏多 (支撐強)" if ratio > 100 else "偏空 (壓力大)"
+                }
         except:
-            df_pc = pd.read_csv(io.BytesIO(res_pc.content), encoding='big5', index_col=False)
-
-        if df_pc.empty: return None
-
-        last_row = df_pc.iloc[-1]
-        last_pc_ratio = float(last_row['買賣權未平倉量比率%'])
-        pc_date = last_row['日期']
-        
-        return {"date": pc_date, "pc_ratio": last_pc_ratio, "status": "偏多 (支撐強)" if last_pc_ratio > 100 else "偏空 (壓力大)"}
-    except: return None
+            continue # 這天失敗，找前一天
+            
+    return None
 
 # --- 5. 市場數據 (Yahoo) ---
 @st.cache_data(ttl=60)
@@ -128,7 +136,7 @@ def plot_gauge(value, title, left_label, right_label, is_risk_asset=False, is_pc
 
 # --- 7. 版面佈局 ---
 
-# 籌碼面
+# A. 籌碼面
 st.subheader("♟️ 選擇權籌碼 (P/C Ratio)")
 chips = get_taifex_chips()
 if chips:
@@ -138,11 +146,11 @@ if chips:
     with col_chip2:
         st.plotly_chart(plot_gauge(chips['pc_ratio'], "P/C Ratio 動能", "偏空/壓力", "偏多/支撐", is_pc_ratio=True), use_container_width=True, config={'displayModeBar': False})
 else:
-    st.error("⚠️ 無法讀取期交所數據")
+    st.info("📊 正在讀取期交所數據...")
 
 st.markdown("---")
 
-# 壓力源
+# B. 壓力源
 st.subheader("🔥 市場壓力源")
 col1, col2, col3, col4 = st.columns(4)
 stress_tickers = [("^VIX", "VIX 恐慌"), ("DX-Y.NYB", "美元指數"), ("^TNX", "美債10年"), ("JPY=X", "日圓")]
@@ -157,7 +165,7 @@ for col, (symbol, name) in zip([col1, col2, col3, col4], stress_tickers):
             else:
                 st.warning("Loading...")
 
-# 風險資產
+# C. 風險資產 (修正：這裡只會有一個迴圈，不會重複了)
 st.subheader("📉 風險資產")
 col5, col6 = st.columns(2)
 asset_tickers = [("EWT", "台股 ETF"), ("BTC-USD", "比特幣")]
@@ -172,7 +180,7 @@ for col, (symbol, name) in zip([col5, col6], asset_tickers):
             else:
                 st.warning("Loading...")
 
-# --- 8. 自動刷新控制台 ---
+# --- 8. 自動刷新 ---
 st.sidebar.title("⚙️ 系統控制")
 auto_refresh = st.sidebar.checkbox("啟用自動刷新 (每60秒)", value=True)
 
@@ -181,15 +189,9 @@ if st.sidebar.button("🔄 立即重新整理"):
     st.rerun()
 
 if auto_refresh:
-    # 倒數計時條
     timer_placeholder = st.sidebar.empty()
-    refresh_rate = 60 # 建議 60 秒，避免被 Yahoo 封鎖
-    
-    for i in range(refresh_rate, 0, -1):
-        timer_placeholder.progress(i / refresh_rate, text=f"⏳ 下次更新: {i} 秒")
+    for i in range(60, 0, -1):
+        timer_placeholder.progress(i / 60, text=f"⏳ 下次更新: {i} 秒")
         time.sleep(1)
-        
-    st.cache_data.clear() # 清除快取以確保抓到新資料
+    st.cache_data.clear()
     st.rerun()
-else:
-    st.sidebar.info("⏸️ 自動刷新已暫停")
