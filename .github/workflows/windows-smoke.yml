@@ -1,0 +1,43 @@
+name: Windows smoke
+
+on:
+  push:
+    branches: [improve-portfolio-readme-data-status-20260928]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Offline tests and Streamlit UI smoke
+        run: python -m unittest discover -s tests -v
+      - name: Boot Streamlit and check HTTP health
+        shell: pwsh
+        run: |
+          $process = Start-Process -FilePath python -ArgumentList "-m", "streamlit", "run", "app.py", "--server.headless=true", "--server.port=8501", "--server.address=127.0.0.1" -PassThru -RedirectStandardOutput streamlit.out.log -RedirectStandardError streamlit.err.log
+          try {
+            $ready = $false
+            for ($i = 0; $i -lt 30; $i++) {
+              Start-Sleep -Seconds 2
+              try {
+                $response = Invoke-WebRequest -Uri "http://127.0.0.1:8501/_stcore/health" -UseBasicParsing -TimeoutSec 2
+                if ($response.StatusCode -eq 200) { $ready = $true; break }
+              } catch { }
+            }
+            if (-not $ready) {
+              Get-Content streamlit.err.log
+              throw "Streamlit health endpoint did not become ready"
+            }
+          } finally {
+            Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+          }
