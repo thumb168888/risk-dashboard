@@ -61,7 +61,7 @@ def render_dashboard():
             st.metric("賣權／買權未平倉量比率", f"{pcr.ratio:.2f}%")
             st.caption(f"資料日期：{pcr.date}｜來源：臺灣期貨交易所")
         with right:
-            st.plotly_chart(gauge(pcr.ratio, "Put/Call 未平倉量比率", 150), use_container_width=True)
+            st.plotly_chart(gauge(pcr.ratio, "Put/Call 未平倉量比率", 150), width="stretch", key="pcr-gauge")
 
     st.subheader("市場指標")
     symbols = [
@@ -81,7 +81,7 @@ def render_dashboard():
                     continue
                 st.metric("收盤值", f"{quote.price:,.2f}", f"{quote.change_pct:+.2f}%")
                 st.caption(f"資料日期：{quote.date}｜Yahoo Finance：{symbol}")
-                st.plotly_chart(gauge(quote.rsi, "14 日 RSI"), use_container_width=True)
+                st.plotly_chart(gauge(quote.rsi, "14 日 RSI"), width="stretch", key=f"rsi-{symbol}")
 
 
 render_dashboard()

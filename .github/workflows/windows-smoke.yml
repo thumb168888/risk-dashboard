@@ -1,8 +1,6 @@
 name: Windows smoke
 
 on:
-  push:
-    branches: [improve-portfolio-readme-data-status-20260928]
   pull_request:
     branches: [main]
 
