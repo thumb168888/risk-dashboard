@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 550" role="img" aria-labelledby="title desc">
+  <title id="title">牧羊人市場觀察頁示意</title>
+  <desc id="desc">左側更新控制，右側期交所比率與六張跨市場指標卡；全部數值為佔位符。</desc>
+  <rect width="1000" height="550" rx="16" fill="#101827"/>
+  <rect x="0" y="0" width="205" height="550" rx="16" fill="#1b2b3b"/>
+  <text x="26" y="56" fill="#fff" font-size="22" font-family="sans-serif" font-weight="bold">市場觀察</text>
+  <text x="26" y="104" fill="#9db5c9" font-size="16" font-family="sans-serif">更新</text>
+  <rect x="26" y="129" width="17" height="17" rx="4" fill="none" stroke="#9db5c9"/>
+  <text x="54" y="144" fill="#e9f2f8" font-size="14" font-family="sans-serif">每 60 秒檢查</text>
+  <rect x="26" y="174" width="150" height="40" rx="8" fill="#21a89b"/>
+  <text x="42" y="200" fill="#fff" font-size="15" font-family="sans-serif">立即重新整理</text>
+  <text x="26" y="263" fill="#9db5c9" font-size="13" font-family="sans-serif">資料日期以卡片為準</text>
+  <text x="240" y="55" fill="#f4f7fa" font-size="26" font-family="sans-serif" font-weight="bold">📊 牧羊人市場觀察</text>
+  <text x="240" y="85" fill="#99afc1" font-size="14" font-family="sans-serif">唯讀市場指標 · 資料不可用時顯示警示 · 非投資建議</text>
+  <text x="240" y="130" fill="#f4f7fa" font-size="21" font-family="sans-serif">臺指選擇權 Put/Call 比</text>
+  <rect x="240" y="147" width="730" height="94" rx="11" fill="#223449"/>
+  <text x="263" y="178" fill="#a9c1d0" font-size="14" font-family="sans-serif">賣權／買權未平倉量比率</text>
+  <text x="263" y="218" fill="#fff" font-size="29" font-family="sans-serif" font-weight="bold">-- %</text>
+  <text x="563" y="191" fill="#a9c1d0" font-size="14" font-family="sans-serif">來源：臺灣期貨交易所</text>
+  <text x="563" y="216" fill="#a9c1d0" font-size="14" font-family="sans-serif">資料日期：--</text>
+  <text x="240" y="282" fill="#f4f7fa" font-size="21" font-family="sans-serif">市場指標</text>
+  <g fill="#223449">
+    <rect x="240" y="299" width="231" height="101" rx="10"/>
+    <rect x="489" y="299" width="231" height="101" rx="10"/>
+    <rect x="738" y="299" width="231" height="101" rx="10"/>
+    <rect x="240" y="415" width="231" height="101" rx="10"/>
+    <rect x="489" y="415" width="231" height="101" rx="10"/>
+    <rect x="738" y="415" width="231" height="101" rx="10"/>
+  </g>
+  <g fill="#eff5f8" font-size="17" font-family="sans-serif">
+    <text x="257" y="329">VIX 指數</text><text x="506" y="329">美元指數</text><text x="755" y="329">美國十年期殖利率</text>
+    <text x="257" y="445">美元／日圓</text><text x="506" y="445">EWT ETF</text><text x="755" y="445">比特幣／美元</text>
+  </g>
+  <g fill="#a9c1d0" font-size="14" font-family="sans-serif">
+    <text x="257" y="356">收盤值：--　 RSI：--</text><text x="506" y="356">收盤值：--　 RSI：--</text><text x="755" y="356">收盤值：--　 RSI：--</text>
+    <text x="257" y="472">收盤值：--　 RSI：--</text><text x="506" y="472">收盤值：--　 RSI：--</text><text x="755" y="472">收盤值：--　 RSI：--</text>
+    <text x="257" y="381">資料日期：--</text><text x="506" y="381">資料日期：--</text><text x="755" y="381">資料日期：--</text>
+    <text x="257" y="497">資料日期：--</text><text x="506" y="497">資料日期：--</text><text x="755" y="497">資料日期：--</text>
+  </g>
+  <text x="797" y="536" fill="#8ea5b8" font-size="13" font-family="sans-serif">示意畫面 · 非即時數據</text>
+</svg>
