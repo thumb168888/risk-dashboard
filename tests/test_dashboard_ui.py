@@ -2,9 +2,13 @@
 
 import importlib.util
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 from data_sources import MarketQuote, PutCallRatio, SourceUnavailable
+
+
+APP_PATH = Path(__file__).resolve().parents[1] / "app.py"
 
 
 @unittest.skipUnless(importlib.util.find_spec("streamlit"), "Streamlit is not installed")
@@ -16,7 +20,7 @@ class DashboardSmokeTest(unittest.TestCase):
         ratio = PutCallRatio("2026-09-01", 95.0)
         with patch("data_sources.load_taifex_ratio", return_value=ratio), \
              patch("data_sources.load_yahoo_quote", return_value=quote):
-            app = AppTest.from_file("app.py").run(timeout=30)
+            app = AppTest.from_file(APP_PATH).run(timeout=30)
 
         self.assertEqual(len(app.exception), 0)
         self.assertEqual(len(app.metric), 7)
@@ -27,7 +31,7 @@ class DashboardSmokeTest(unittest.TestCase):
 
         with patch("data_sources.load_taifex_ratio", side_effect=SourceUnavailable("測試失敗")), \
              patch("data_sources.load_yahoo_quote", side_effect=SourceUnavailable("測試失敗")):
-            app = AppTest.from_file("app.py").run(timeout=30)
+            app = AppTest.from_file(APP_PATH).run(timeout=30)
 
         self.assertEqual(len(app.exception), 0)
         self.assertEqual(len(app.warning), 7)
